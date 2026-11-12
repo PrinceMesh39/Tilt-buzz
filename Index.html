@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tilt Buzz</title>
+<style>
+  :root {
+    --bg: #e9eef3;
+    --surface: #ffffff;
+    --ink: #14213d;
+    --muted: #5b6b82;
+    --line: #cfd8e3;
+    --accent: #2b50ff;
+    --accent-ink: #ffffff;
+    --buzz: #ffb400;
+    --stop: #d93b3b;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101826;
+      --surface: #19243a;
+      --ink: #eaf0fa;
+      --muted: #93a3bb;
+      --line: #2c3a55;
+      --accent: #5b7bff;
+      --stop: #ff6b6b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    min-height: 100vh;
+    padding: max(20px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+    display: flex;
+    justify-content: center;
+  }
+  main { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 18px; }
+  h1 { font-size: 1.9rem; margin: 4px 0 0; letter-spacing: -0.02em; }
+  .sub { margin: 0; color: var(--muted); font-size: 0.98rem; line-height: 1.45; }
+
+  .stage {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .dial {
+    position: relative; width: 190px; height: 190px; border-radius: 50%;
+    border: 2px solid var(--line);
+    background:
+      linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat,
+      linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .dial.buzz { border-color: var(--buzz); box-shadow: 0 0 0 8px rgba(255,180,0,.25); }
+  .dial.stopped { border-color: var(--stop); opacity: .7; }
+  .bubble {
+    position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px;
+    border-radius: 50%; background: var(--accent);
+    transition: background .15s;
+    will-change: transform;
+  }
+  .dial.buzz .bubble { background: var(--buzz); }
+
+  .status { font-size: 1.35rem; font-weight: 700; min-height: 1.6em; }
+  .status.ok { color: var(--accent); }
+  .status.buzz { color: #b07a00; }
+  .status.stop { color: var(--stop); }
+  .status.err { color: var(--stop); font-size: 1rem; font-weight: 600; text-align: center; }
+
+  .readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; }
+  .readout div { background: var(--bg); border-radius: 12px; padding: 10px 6px; text-align: center; }
+  .readout b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .readout span { color: var(--muted); font-size: 0.82rem; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 18px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .row label { font-weight: 600; }
+  .row output { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
+  input[type=range] { width: 100%; height: 36px; accent-color: var(--accent); }
+
+  button {
+    font: inherit; font-weight: 700; border: 0; border-radius: 14px;
+    padding: 16px 18px; min-height: 52px; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(.98); }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--buzz); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #enableBtn { width: 100%; font-size: 1.1rem; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  #stopBtn { background: var(--stop); color: #fff; }
+
+  .note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; text-align: center; }
+  [hidden] { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Tilt Buzz</h1>
+    <p class="sub">Your phone vibrates when you turn or tilt it past the angle you set.</p>
+  </header>
+
+  <button id="enableBtn" type="button">Enable Motion</button>
+
+  <section class="stage" id="stage" hidden aria-live="polite">
+    <div class="dial" id="dial"><div class="bubble" id="bubble"></div></div>
+    <div class="status" id="status">Listening...</div>
+    <div class="readout">
+      <div><b id="vAlpha">–</b><span>alpha (turn)</span></div>
+      <div><b id="vBeta">–</b><span>beta (front/back)</span></div>
+      <div><b id="vGamma">–</b><span>gamma (left/right)</span></div>
+    </div>
+  </section>
+
+  <section class="panel" id="controls" hidden>
+    <div class="row">
+      <label for="sens">Sensitivity</label>
+      <output id="sensOut" for="sens">15°</output>
+    </div>
+    <input type="range" id="sens" min="5" max="45" step="1" value="15">
+    <p class="note" style="text-align:left;margin-top:2px">Lower = vibrates on smaller movements.</p>
+    <div class="pair">
+      <button id="startBtn" type="button" disabled>Start Vibration</button>
+      <button id="stopBtn" type="button">Stop Vibration</button>
+    </div>
+  </section>
+
+  <p class="status err" id="error" role="alert" hidden></p>
+  <p class="note">Works best on Android Chrome. On iPhone, you must allow motion access.</p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var isVibratingEnabled = true;
+  var threshold = 15;
+  var last = null;
+  var lastBuzzAt = 0;
+  var listening = false;
+  var buzzTimer = null;
+  var canVibrate = typeof navigator.vibrate === "function";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var enableBtn = $("enableBtn"), stage = $("stage"), controls = $("controls");
+  var statusEl = $("status"), dial = $("dial"), bubble = $("bubble"), errorEl = $("error");
+  var startBtn = $("startBtn"), stopBtn = $("stopBtn"), sens = $("sens"), sensOut = $("sensOut");
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = "status " + (cls || "");
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.hidden = !msg;
+  }
+
+  function angleDiff(a, b, period) {
+    var d = Math.abs(a - b) % period;
+    return d > period / 2 ? period - d : d;
+  }
+
+  function round(n) { return n == null ? "–" : Math.round(n) + "°"; }
+
+  function vibrate() {
+    if (canVibrate) navigator.vibrate(200);
+    dial.classList.add("buzz");
+    setStatus(canVibrate ? "Vibrated!" : "Vibrated! (this browser can't buzz)", "buzz");
+    clearTimeout(buzzTimer);
+    buzzTimer = setTimeout(function () {
+      dial.classList.remove("buzz");
+      if (isVibratingEnabled && listening) setStatus("Listening...", "ok");
+    }, 700);
+  }
+
+  function onOrientation(e) {
+    if (e.alpha == null && e.beta == null && e.gamma == null) return;
+    var a = e.alpha || 0, b = e.beta || 0, g = e.gamma || 0;
+
+    $("vAlpha").textContent = round(a);
+    $("vBeta").textContent = round(b);
+    $("vGamma").textContent = round(g);
+
+    var x = Math.max(-45, Math.min(45, g)) / 45 * 76;
+    var y = Math.max(-45, Math.min(45, b)) / 45 * 76;
+    bubble.style.transform = "translate(" + x + "px," + y + "px)";
+
+    if (!last) { last = { alpha: a, beta: b, gamma: g }; return; }
+    if (!isVibratingEnabled) return;
+
+    var change = Math.max(
+      angleDiff(a, last.alpha, 360),
+      angleDiff(b, last.beta, 360),
+      Math.abs(g - last.gamma)
+    );
+
+    var now = Date.now();
+    if (change > threshold && now - lastBuzzAt > 300) {
+      lastBuzzAt = now;
+      last = { alpha: a, beta: b, gamma: g };
+      vibrate();
+    }
+  }
+
+  function startListening() {
+    if (!listening) {
+      window.addEventListener("deviceorientation", onOrientation, true);
+      listening = true;
+    }
+    last = null;
+    enableBtn.hidden = true;
+    stage.hidden = false;
+    controls.hidden = false;
+    setStatus("Listening...", "ok");
+    if (!canVibrate) {
+      showError("This browser doesn't support vibration (iPhone Safari doesn't). You'll still see the on-screen flash.");
+    }
+    setTimeout(function () {
+      if (listening && last === null && $("vAlpha").textContent === "–") {
+        showError("No motion data received. Use a phone over HTTPS, or check your browser's motion settings.");
+      }
+    }, 2500);
+  }
+
+  function requestPermission(Ctor) {
+    if (Ctor && typeof Ctor.requestPermission === "function") return Ctor.requestPermission();
+    return Promise.resolve("granted");
+  }
+
+  enableBtn.addEventListener("click", function () {
+    showError("");
+    if (!("DeviceOrientationEvent" in window)) {
+      showError("This device or browser doesn't support motion sensors.");
+      return;
+    }
+    var needsPrompt = typeof DeviceOrientationEvent.requestPermission === "function" ||
+                      (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function");
+
+    requestPermission(window.DeviceMotionEvent)
+      .then(function (motionResult) {
+        if (motionResult !== "granted") return motionResult;
+        return requestPermission(window.DeviceOrientationEvent);
+      })
+      .then(function (result) {
+        if (result === "granted") {
+          if (canVibrate) navigator.vibrate(1);
+          startListening();
+        } else {
+          showError("Motion access was denied. On iPhone, go to Settings › Safari › Motion & Orientation Access, turn it on, then reload this page.");
+        }
+      })
+      .catch(function (err) {
+        showError(needsPrompt
+          ? "Couldn't get motion access. Make sure the page is open over HTTPS and tap Enable Motion again."
+          : "Couldn't start motion sensors: " + (err && err.message ? err.message : "unknown error"));
+      });
+  });
+
+  stopBtn.addEventListener("click", function () {
+    isVibratingEnabled = false;
+    if (canVibrate) navigator.vibrate(0);
+    clearTimeout(buzzTimer);
+    dial.classList.remove("buzz");
+    dial.classList.add("stopped");
+    setStatus("Stopped", "stop");
+    stopBtn.disabled = true;
+    startBtn.disabled = false;
+  });
+
+  startBtn.addEventListener("click", function () {
+    isVibratingEnabled = true;
+    last = null;
+    dial.classList.remove("stopped");
+    setStatus("Listening...", "ok");
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    if (canVibrate) navigator.vibrate(1);
+  });
+
+  sens.addEventListener("input", function () {
+    threshold = Number(sens.value);
+    sensOut.textContent = threshold + "°";
+  });
+})();
+</script>
+</body>
+  </html>
